@@ -1,0 +1,22 @@
+{
+  "acceptedHashes": {},
+  "upstreams": {
+    "void": {
+      "computedHash": "d6b85df6a8b926acda7169ad9c3229fc87a1088d42eb2431182c8baac4484ac1",
+      "installedAt": "2026-11-20T10:29:22.482Z",
+      "native": {
+        "computedHash": "d6b85df6a8b926acda7169ad9c3229fc87a1088d42eb2431182c8baac4484ac1",
+        "skillPath": "packages/void/skills/void/SKILL.md",
+        "source": "voidzero-dev/void",
+        "sourceType": "github"
+      },
+      "skillFolderHash": "89f05f33a1ca0f545536a3591f41480e2357fc7f",
+      "skillPath": "packages/void/skills/void/SKILL.md",
+      "source": "voidzero-dev/void",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/voidzero-dev/void.git",
+      "updatedAt": "2026-11-20T10:29:22.482Z"
+    }
+  },
+  "version": 1
+}

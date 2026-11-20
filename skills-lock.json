@@ -1,0 +1,11 @@
+{
+  "skills": {
+    "void": {
+      "computedHash": "d6b85df6a8b926acda7169ad9c3229fc87a1088d42eb2431182c8baac4484ac1",
+      "skillPath": "packages/void/skills/void/SKILL.md",
+      "source": "voidzero-dev/void",
+      "sourceType": "github"
+    }
+  },
+  "version": 1
+}
