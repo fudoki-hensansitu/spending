@@ -97,7 +97,7 @@ function Share({ url }: { url: string }) {
       const el = root.current?.closest('.rc-ribbon') ? null : root.current?.closest<HTMLElement>('.rc-paper')
       if (!el) return
       void import('./snap')
-        // ボタン（シェア・詳細を見る）は写さず、QR の下で切る
+        // ボタン（シェア）は写さず、QR の下で切る
         .then(({ paperCanvas }) => {
           const qr = el.querySelector('.rc-qr')
           const height = qr ? qr.getBoundingClientRect().bottom - el.getBoundingClientRect().top + 34 : undefined
@@ -280,7 +280,7 @@ function useFollow(phase: Phase, printing: string | null, card: React.RefObject<
       if (r.bottom > vh) go(window.scrollY + Math.min(r.top - 16, r.bottom - vh + 16), SCROLL_MS, easeInOut)
     }
     if (printing && feed.current) {
-      // 刷り終えたときのレシートの最後（合計・QR コード・詳細）まで送る。紙より長くかけて後から追い、出だしはゆっくりで差し出し口のあたりを見せる。
+      // 刷り終えたときのレシートの最後（合計・QR コード）まで送る。紙より長くかけて後から追い、出だしはゆっくりで差し出し口のあたりを見せる。
       // 末端の下に少し余白を残し、そこへ出てくる他のまちの節に気づけるようにする。
       // 紙は高さを 0 から伸ばすので、刷り終えた高さは中身の高さ（paperHeight）から求める
       const f = feed.current
@@ -509,11 +509,11 @@ type Older = { r: Printed; height: number }
 let printedId = 0
 
 /** 刷った一枚の紙（数え上げの key と、その年度のデータ） */
-/** href（QR の行き先）と pop（1人あたりで割る人口）は、その紙を刷ったときの年度のもの。年度を替えても前の紙は前の年度のまま */
+/** base（分野の事業へのリンク）と pop（1人あたりで割る人口）は、その紙を刷ったときのもの。刷り直しても前の紙は前のまま */
 /** mine は住民税のうちそのまちに入る分（円）。入れていなければ null で、1人あたりで刷る */
-type Printed = { id: number; key: string; year: number; v: YearView; href: string; base: string; pop: number; mine: number | null }
+type Printed = { id: number; key: string; year: number; v: YearView; base: string; pop: number; mine: number | null }
 
-export function ReceiptMachine({ path, name, kind, v, year, pop, base, detailHref, head, onPrinted }: { onPrinted?: () => void; /** このサイトでのまちの path（シェアのリンク） */ path: string; name: string; /** 自治体の種類（都道府県・区・市・町村）。住民税のうち入る分の割合を決める */ kind: string; v: YearView; year: number; pop: number | null; base: string; detailHref: string; head: React.ReactNode }) {
+export function ReceiptMachine({ path, name, kind, v, year, pop, base, head, onPrinted }: { onPrinted?: () => void; /** このサイトでのまちの path（シェアのリンク） */ path: string; name: string; /** 自治体の種類（都道府県・区・市・町村）。住民税のうち入る分の割合を決める */ kind: string; v: YearView; year: number; pop: number | null; base: string; head: React.ReactNode }) {
   const settled = v.word === '決算'
   const what = `${yearName(year)}の${settled ? '決算' : '予算'}`
   /** 住民税の年額と、そのうちこのまちに入る分。入れると、その額を予算の割合で分野に割って刷り直す */
@@ -545,7 +545,7 @@ export function ReceiptMachine({ path, name, kind, v, year, pop, base, detailHre
   const card = React.useRef<HTMLElement>(null)
   const phase = usePhase(counted)
   React.useEffect(() => {
-    if (phase === 'print' && pop && printed?.key !== counted) setPrinted({ id: ++printedId, key: counted, year, v, href: detailHref, base, pop, mine })
+    if (phase === 'print' && pop && printed?.key !== counted) setPrinted({ id: ++printedId, key: counted, year, v, base, pop, mine })
   }, [phase, counted])
   /** いま刷っている紙の key（刷り終えるまで）。頁送りと紙の動きに使う */
   const printing = phase === 'print' && printed?.key === counted ? counted : null
@@ -568,7 +568,7 @@ export function ReceiptMachine({ path, name, kind, v, year, pop, base, detailHre
     for (const id of pictures.keys()) if (!live.has(id)) pictures.delete(id)
   }, [printed, older])
   useFollow(phase, printing, card, feed)
-  // 刷り終えたレシートの末端（合計・QR・詳細）まで頁が送られたら知らせる（人口が無く紙を刷らないまちは数え終えたら）。
+  // 刷り終えたレシートの末端（合計・QR）まで頁が送られたら知らせる（人口が無く紙を刷らないまちは数え終えたら）。
   // 紙の動きが終わったかではなく、頁の送り具合で決める。ホームはそのあとにレシートの下へ他のまちの節を出す（2026-11-18 yuito）
   const done = useLatest(onPrinted)
   React.useEffect(() => {
@@ -619,11 +619,6 @@ export function ReceiptMachine({ path, name, kind, v, year, pop, base, detailHre
         <Qr url={shareUrl(path, r.year)} />
         <Share url={shareUrl(path, r.year)} />
       </div>
-      {/* 読み終えたところから、そのまま詳しい頁へ進めるように、紙の一番下に「<まち>の詳細」を置く（2026-11-18 yuito） */}
-      <a href={`${FUDOKI_ORIGIN}${r.href}`} data-snap-skip className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-brand px-4 py-3 text-sm font-medium text-brand-foreground transition-opacity hover:opacity-90">
-        {name}の詳細
-        <ArrowRightIcon className="size-4" />
-      </a>
     </div>
     )
   }
