@@ -7,7 +7,7 @@ import { encode } from 'uqr'
 import { ArrowRightIcon, CaretDownIcon, CheckIcon, LinkIcon, XLogoIcon } from '@phosphor-icons/react'
 import { cn } from '../lib/cn'
 import { titleClass } from '../components/title'
-import { FUDOKI_ORIGIN, SITE_ORIGIN, perHeadParts, reiwa, withUnits, yearName, type Field, type YearView } from '../lib/fudoki'
+import { FUDOKI_ORIGIN, SITE_ORIGIN, apportion, perHeadParts, reiwa, withUnits, yearName, type Field, type YearView } from '../lib/fudoki'
 import { FieldIcon } from '../components/parts'
 import { BEAT, COUNT_MS, FOLLOW_MS, PRINT_MS, READ_MS, SCROLL_MS } from './motion'
 import './receipt.css'
@@ -164,12 +164,14 @@ const Yen = ({ n, className }: { n: number; className?: string }) => (
 /** 分野の目を、開いたときに出す数（残りは「ほか」にまとめる） */
 const TOP_ITEMS = 5
 
-/** レシートの分野の行。押すと、その分野の1人あたりを目（子育て応援費・障害者支援費など）に割って開く。目の額は目の予算を人口で割って丸めた額で、
- * 出した目の和と分野の額の差（残りの目・目の無い項・丸め）は「ほか」にまとめる */
-function FieldRow({ f, yen, pop }: { f: Field; yen: number; pop: number }) {
+/** レシートの分野の行。押すと、その分野の1人あたり（yen）を目（子育て応援費・障害者支援費など）の予算の比で割って開く。
+ * 上位の目に入らない分（残りの目・目の無い項）は「ほか」にまとめ、開いた行の和は必ず分野の額に合う。続きは風土記の事業のタブ（分野で絞る）へ繋ぐ */
+function FieldRow({ f, yen, base }: { f: Field; yen: number; /** 風土記でのそのまちのその年度の path（/tokyo/shinagawa/2025） */ base: string }) {
   const [open, setOpen] = React.useState(false)
-  const top = f.items.slice(0, TOP_ITEMS).map((m) => ({ name: m.name, yen: Math.round(m.yen / pop) }))
-  const rest = yen - top.reduce((a, m) => a + m.yen, 0)
+  const shown = f.items.slice(0, TOP_ITEMS)
+  const parts = apportion([...shown.map((m) => m.yen), Math.max(0, f.yen - shown.reduce((a, m) => a + m.yen, 0))], yen)
+  const top = shown.map((m, i) => ({ id: m.id, name: m.name, yen: parts[i]! }))
+  const rest = parts[shown.length]!
   const id = React.useId()
   return (
     <li>
@@ -186,7 +188,7 @@ function FieldRow({ f, yen, pop }: { f: Field; yen: number; pop: number }) {
       {open ? (
         <ul id={id} className="ob-swap mb-2 pr-[22px] pl-9">
           {top.map((m) => (
-            <li key={m.name} className="flex items-baseline gap-2 py-1 text-xs">
+            <li key={m.id} className="flex items-baseline gap-2 py-1 text-xs">
               <span className="min-w-0">{m.name}</span>
               <span className="rc-lead" />
               <Yen n={m.yen} />
@@ -199,6 +201,12 @@ function FieldRow({ f, yen, pop }: { f: Field; yen: number; pop: number }) {
               <Yen n={rest} />
             </li>
           ) : null}
+          <li className="pt-1 text-xs">
+            <a href={`${FUDOKI_ORIGIN}${base}/projects?field=${f.id}`} className="inline-flex items-center gap-1 text-brand underline-offset-4 hover:underline">
+              {f.name}の事業を風土記で見る
+              <ArrowRightIcon className="size-3" aria-hidden="true" />
+            </a>
+          </li>
         </ul>
       ) : null}
     </li>
@@ -456,7 +464,7 @@ let printedId = 0
 
 /** 刷った一枚の紙（数え上げの key と、その年度のデータ） */
 /** href（QR の行き先）と pop（1人あたりで割る人口）は、その紙を刷ったときの年度のもの。年度を替えても前の紙は前の年度のまま */
-type Printed = { id: number; key: string; year: number; v: YearView; href: string; pop: number }
+type Printed = { id: number; key: string; year: number; v: YearView; href: string; base: string; pop: number }
 
 export function ReceiptMachine({ path, name, v, year, pop, base, detailHref, head, onPrinted }: { onPrinted?: () => void; /** このサイトでのまちの path（シェアのリンク） */ path: string; name: string; v: YearView; year: number; pop: number | null; base: string; detailHref: string; head: React.ReactNode }) {
   const settled = v.word === '決算'
@@ -484,7 +492,7 @@ export function ReceiptMachine({ path, name, v, year, pop, base, detailHref, hea
   const card = React.useRef<HTMLElement>(null)
   const phase = usePhase(counted)
   React.useEffect(() => {
-    if (phase === 'print' && pop && printed?.key !== counted) setPrinted({ id: ++printedId, key: counted, year, v, href: detailHref, pop })
+    if (phase === 'print' && pop && printed?.key !== counted) setPrinted({ id: ++printedId, key: counted, year, v, href: detailHref, base, pop })
   }, [phase, counted])
   /** いま刷っている紙の key（刷り終えるまで）。頁送りと紙の動きに使う */
   const printing = phase === 'print' && printed?.key === counted ? counted : null
@@ -546,7 +554,7 @@ export function ReceiptMachine({ path, name, v, year, pop, base, detailHref, hea
       </p>
       <ul className="rc-rule mt-4 pt-2">
         {r.v.fields.map((f, i) => (
-          <FieldRow key={f.id} f={f} yen={parts[i]!} pop={r.pop} />
+          <FieldRow key={f.id} f={f} yen={parts[i]!} base={r.base} />
         ))}
       </ul>
       <p className="rc-rule mt-2 flex items-center justify-between pt-3">

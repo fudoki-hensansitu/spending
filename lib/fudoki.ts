@@ -39,13 +39,13 @@ const FRAMES: [id: string, name: string, examples: string][] = [
 ]
 
 /** items は分野に入る目（金額の多い順）。目の無い項は分野の額には入るが items には出ない */
-export type Field = { id: string; name: string; examples: string; yen: number; items: { name: string; yen: number }[] }
+export type Field = { id: string; name: string; examples: string; yen: number; items: { id: string; name: string; yen: number }[] }
 
 /** 1年度の見え方。分野は金額の多い順で、その他は常に最後 */
 export function yearView(d: Snapshot) {
   const y = d.years[String(d.year)]!
   const moku = [...y.kan.flatMap((k) => k.kou.flatMap((o) => o.moku)), ...y.looseMoku]
-  const itemsOf = (field: string) => moku.filter((m) => m.field === field && m.yen > 0).sort((a, b) => b.yen - a.yen).map((m) => ({ name: m.name, yen: m.yen }))
+  const itemsOf = (field: string) => moku.filter((m) => m.field === field && m.yen > 0).sort((a, b) => b.yen - a.yen).map((m) => ({ id: m.id, name: m.name, yen: m.yen }))
   const fields: Field[] = FRAMES.map(([id, name, examples]) => ({ id, name, examples, yen: y.fields[id] ?? 0, items: itemsOf(id) }))
     .filter((f) => f.yen > 0)
     .sort((a, b) => Number(a.id === 'other') - Number(b.id === 'other') || b.yen - a.yen)
@@ -56,10 +56,10 @@ export type YearView = ReturnType<typeof yearView>
 /** 頁で選べる年度（古い順） */
 export const yearsOf = (d: Snapshot) => Object.keys(d.kinds).map(Number).sort((a, b) => a - b)
 
-/** 分野ごとの1人あたり（円）。和が合計（total を人口で割って丸めた額）に合うよう、大きい端数から1円ずつ足す */
-export function perHeadParts(fields: { yen: number }[], total: number, pop: number) {
-  const sum = Math.round(total / pop)
-  const raw = fields.map((f) => f.yen / pop)
+/** sum（整数）を weights の比で整数に割る。床で取り、大きい端数から1円ずつ足して和を sum に合わせる */
+export function apportion(weights: number[], sum: number) {
+  const whole = weights.reduce((a, b) => a + b, 0)
+  const raw = weights.map((w) => (whole > 0 ? (w / whole) * sum : 0))
   const parts = raw.map(Math.floor)
   const rest = sum - parts.reduce((a, b) => a + b, 0)
   raw
@@ -67,7 +67,13 @@ export function perHeadParts(fields: { yen: number }[], total: number, pop: numb
     .sort((a, b) => b[0] - a[0])
     .slice(0, Math.max(0, rest))
     .forEach(([, i]) => parts[i]!++)
-  return { sum, parts }
+  return parts
+}
+
+/** 分野ごとの1人あたり（円）。和が合計（total を人口で割って丸めた額）に合うよう割る */
+export function perHeadParts(fields: { yen: number }[], total: number, pop: number) {
+  const sum = Math.round(total / pop)
+  return { sum, parts: apportion(fields.map((f) => f.yen), sum) }
 }
 
 /** 額を兆・億・万の単位で区切った文字（9,606億8,000万円 の「円」の前まで）。0 の区切りは出さない。端数は丸めない */
@@ -107,7 +113,7 @@ export const withCheckDigit = (five: string) => {
 /** まちのレシートの頁の題（head と、年度を替えたときの document.title） */
 export const pageTitle = (name: string, year: number) => `${name}の1人あたりのレシート（${reiwa(year)}）｜風土記`
 
-/** 風土記の本体。分野の行・「詳細」・紋章はそこへ繋ぐ */
+/** 風土記の本体。分野の続き・「詳細」・紋章はそこへ繋ぐ */
 export const FUDOKI_ORIGIN = 'https://fudoki.dev'
 /** このサイト。シェアのリンクと OG 画像の絶対 URL に使う */
 export const SITE_ORIGIN = 'https://spending.fudoki.dev'
