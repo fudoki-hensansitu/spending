@@ -13,8 +13,12 @@ export type Snapshot = {
   year: number
   /** 頁で選べる年度ごとの資料の種類 */
   kinds: Record<string, Kind>
-  years: Record<string, { kind: Kind; total: number; fields: Record<string, number> }>
+  years: Record<string, { kind: Kind; total: number; fields: Record<string, number>; kan: Kan[]; looseMoku: Moku[] }>
 }
+
+/** 目（分野つき）。款・項の木の末端 */
+type Moku = { id: string; name: string; yen: number; field: string }
+type Kan = { name: string; yen: number; kou: { name: string; yen: number; moku: Moku[] }[] }
 
 /** 自治体の検索（/api/jurisdictions?name=）の1件 */
 export type TownEntry = { code: string; name: string; prefecture: string; kind: string; path: string }
@@ -34,12 +38,15 @@ const FRAMES: [id: string, name: string, examples: string][] = [
   ['other', 'その他', '分野を一つに決められない支出'],
 ]
 
-export type Field = { id: string; name: string; examples: string; yen: number }
+/** items は分野に入る目（金額の多い順）。目の無い項は分野の額には入るが items には出ない */
+export type Field = { id: string; name: string; examples: string; yen: number; items: { name: string; yen: number }[] }
 
 /** 1年度の見え方。分野は金額の多い順で、その他は常に最後 */
 export function yearView(d: Snapshot) {
   const y = d.years[String(d.year)]!
-  const fields: Field[] = FRAMES.map(([id, name, examples]) => ({ id, name, examples, yen: y.fields[id] ?? 0 }))
+  const moku = [...y.kan.flatMap((k) => k.kou.flatMap((o) => o.moku)), ...y.looseMoku]
+  const itemsOf = (field: string) => moku.filter((m) => m.field === field && m.yen > 0).sort((a, b) => b.yen - a.yen).map((m) => ({ name: m.name, yen: m.yen }))
+  const fields: Field[] = FRAMES.map(([id, name, examples]) => ({ id, name, examples, yen: y.fields[id] ?? 0, items: itemsOf(id) }))
     .filter((f) => f.yen > 0)
     .sort((a, b) => Number(a.id === 'other') - Number(b.id === 'other') || b.yen - a.yen)
   return { year: d.year, total: y.total, fields, word: y.kind === 'settlement' ? ('決算' as const) : ('予算' as const) }

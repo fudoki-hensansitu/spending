@@ -4,10 +4,10 @@
 // 1人あたりは予算を人口で割った額（払った税金の額ではない）。分野の行の和が合計に合うよう、大きい端数から1円ずつ足して丸める
 import * as React from 'react'
 import { encode } from 'uqr'
-import { ArrowRightIcon, CheckIcon, LinkIcon, XLogoIcon } from '@phosphor-icons/react'
+import { ArrowRightIcon, CaretDownIcon, CheckIcon, LinkIcon, XLogoIcon } from '@phosphor-icons/react'
 import { cn } from '../lib/cn'
 import { titleClass } from '../components/title'
-import { FUDOKI_ORIGIN, SITE_ORIGIN, perHeadParts, reiwa, withUnits, yearName, type YearView } from '../lib/fudoki'
+import { FUDOKI_ORIGIN, SITE_ORIGIN, perHeadParts, reiwa, withUnits, yearName, type Field, type YearView } from '../lib/fudoki'
 import { FieldIcon } from '../components/parts'
 import { BEAT, COUNT_MS, FOLLOW_MS, PRINT_MS, READ_MS, SCROLL_MS } from './motion'
 import './receipt.css'
@@ -160,6 +160,50 @@ const Yen = ({ n, className }: { n: number; className?: string }) => (
     <small className="ml-1 text-[0.55em]">円</small>
   </span>
 )
+
+/** 分野の目を、開いたときに出す数（残りは「ほか」にまとめる） */
+const TOP_ITEMS = 5
+
+/** レシートの分野の行。押すと、その分野の1人あたりを目（子育て応援費・障害者支援費など）に割って開く。目の額は目の予算を人口で割って丸めた額で、
+ * 出した目の和と分野の額の差（残りの目・目の無い項・丸め）は「ほか」にまとめる */
+function FieldRow({ f, yen, pop }: { f: Field; yen: number; pop: number }) {
+  const [open, setOpen] = React.useState(false)
+  const top = f.items.slice(0, TOP_ITEMS).map((m) => ({ name: m.name, yen: Math.round(m.yen / pop) }))
+  const rest = yen - top.reduce((a, m) => a + m.yen, 0)
+  const id = React.useId()
+  return (
+    <li>
+      <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen((o) => !o)} className="block w-full rounded-lg px-2 py-2 text-left transition-colors hover:bg-card">
+        <span className="flex items-baseline gap-2 text-sm">
+          <FieldIcon id={f.id} className="size-[18px] shrink-0 self-center text-muted-foreground" />
+          <span className="whitespace-nowrap">{f.name}</span>
+          <span className="rc-lead" />
+          <Yen n={yen} className="text-base" />
+          <CaretDownIcon className={cn('size-3.5 shrink-0 self-center text-muted-foreground transition-transform duration-200', open && 'rotate-180')} aria-hidden="true" />
+        </span>
+        {f.examples && !open ? <span className="mt-1 block pl-7 text-xs text-muted-foreground">{f.examples}</span> : null}
+      </button>
+      {open ? (
+        <ul id={id} className="ob-swap mb-2 pr-[22px] pl-9">
+          {top.map((m) => (
+            <li key={m.name} className="flex items-baseline gap-2 py-1 text-xs">
+              <span className="min-w-0">{m.name}</span>
+              <span className="rc-lead" />
+              <Yen n={m.yen} />
+            </li>
+          ))}
+          {rest > 0 && top.length > 0 ? (
+            <li className="flex items-baseline gap-2 py-1 text-xs text-muted-foreground">
+              <span>ほか</span>
+              <span className="rc-lead" />
+              <Yen n={rest} />
+            </li>
+          ) : null}
+        </ul>
+      ) : null}
+    </li>
+  )
+}
 
 /** 演出の段。count: 札で数え上げる → print: 札の下端の差し出し口からレシートが出る */
 type Phase = 'count' | 'print'
@@ -499,27 +543,9 @@ export function ReceiptMachine({ path, name, v, year, pop, base, detailHref, hea
         {reiwa(r.year)} {r.v.word === '決算' ? '決算' : '当初予算'}・1人あたり
       </p>
       <ul className="rc-rule mt-4 pt-2">
-        {r.v.fields.map((f, i) => {
-          const row = (
-            <>
-              <span className="flex items-baseline gap-2 text-sm">
-                <FieldIcon id={f.id} className="size-[18px] shrink-0 self-center text-muted-foreground" />
-                <span className="whitespace-nowrap">{f.name}</span>
-                <span className="rc-lead" />
-                <Yen n={parts[i]!} className="text-base" />
-              </span>
-              {f.examples ? <span className="mt-1 block pl-7 text-xs text-muted-foreground">{f.examples}</span> : null}
-            </>
-          )
-          // 分野の問いのフィードを開く（その他も問いがある。問いは年度の段を持たないので base の年度を外す）
-          return (
-            <li key={f.id}>
-              <a href={`${FUDOKI_ORIGIN}${base.replace(/\/\d{4}$/, '')}?field=${f.id}`} className="block rounded-lg px-2 py-2 transition-colors hover:bg-card">
-                {row}
-              </a>
-            </li>
-          )
-        })}
+        {r.v.fields.map((f, i) => (
+          <FieldRow key={f.id} f={f} yen={parts[i]!} pop={r.pop} />
+        ))}
       </ul>
       <p className="rc-rule mt-2 flex items-center justify-between pt-3">
         <span className="text-sm">1人あたりの合計</span>

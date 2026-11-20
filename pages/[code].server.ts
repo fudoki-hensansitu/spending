@@ -22,6 +22,12 @@ export const loader = defineHandler<Props>(async (c) => {
   ])
   const town = towns[0]
   if (!d || !town || !d.years[String(d.year)]) throw notFound()
+  // 「どこへ行った？」は使い終えたお金の話なので、年度の指定が無ければ、使う予定の当初予算ではなく最新の決算から見せる（決算が無いまちは当初予算のまま）
+  const settled = Object.entries(d.kinds).filter(([, k]) => k === 'settlement').map(([y]) => Number(y)).sort((a, b) => b - a)[0]
+  if (yearText === undefined && d.kinds[String(d.year)] !== 'settlement' && settled !== undefined) {
+    const s = await loadSnapshot(env, headers, code, settled)
+    if (s && s.years[String(s.year)]) return { d: s, town }
+  }
   return { d, town }
 })
 
