@@ -36,7 +36,13 @@ export function TownSearch({ placeholder, brand = false, className }: { placehol
       ac.abort()
     }
   }, [q, open])
-  const more = () => page?.next && void search(q.trim(), page.next).then((p) => p && setPage((x) => (x ? { entries: [...x.entries, ...p.entries], next: p.next } : p)))
+  /** 今の語（続きが届いたときに語が変わっていたら捨てる） */
+  const latest = React.useRef(q)
+  latest.current = q
+  const more = () => {
+    const asked = q
+    if (page?.next) void search(asked.trim(), page.next).then((p) => p && latest.current === asked && setPage((x) => (x ? { entries: [...x.entries, ...p.entries], next: p.next } : p)))
+  }
   const entries = page?.entries ?? []
   const pick = (e: TownEntry) => {
     setOpen(false)

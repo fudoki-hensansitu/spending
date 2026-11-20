@@ -8,7 +8,7 @@ import { Emblem } from '../components/parts'
 import { Title } from '../components/title'
 import { Footer, Intro } from '../components/intro'
 import { TownSearch } from '../components/town-search'
-import { FUDOKI_ORIGIN, reiwa, yearName, yearView, yearsOf, type Snapshot } from '../lib/fudoki'
+import { FUDOKI_ORIGIN, pageTitle, reiwa, yearName, yearView, yearsOf, type Snapshot } from '../lib/fudoki'
 import { cn } from '../lib/cn'
 import type { Props } from './[code].server'
 
@@ -23,14 +23,24 @@ function useYear(first: Snapshot) {
     setByYear({ [first.year]: first })
     setYear(first.year)
   }
-  const pick = (y: number) => {
+  /** 年度を替え終えたら、URL の ?year= と頁の題をその年度にする（読めなかったら前の年度のまま） */
+  const show = (x: Snapshot) => {
+    setYear(x.year)
     const url = new URL(location.href)
-    url.searchParams.set('year', String(y))
+    url.searchParams.set('year', String(x.year))
     history.replaceState(history.state, '', url)
-    if (byYear[y]) return setYear(y)
+    document.title = pageTitle(x.name, x.year)
+  }
+  const pick = (y: number) => {
+    const have = byYear[y]
+    if (have) return show(have)
     void fetch(`/api/jurisdictions/${first.code}?year=${y}`)
       .then((r) => (r.ok ? (r.json() as Promise<Snapshot>) : null))
-      .then((x) => x && x.code === first.code && (setByYear((m) => ({ ...m, [x.year]: x })), setYear(x.year)))
+      .then((x) => {
+        if (!x || x.code !== first.code) return
+        setByYear((m) => ({ ...m, [x.year]: x }))
+        show(x)
+      })
       .catch(() => {})
   }
   return { d: byYear[year] ?? first, setYear: pick }

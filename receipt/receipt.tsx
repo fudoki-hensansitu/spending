@@ -148,7 +148,7 @@ function Qr({ url }: { url: string }) {
   const { data, size } = React.useMemo(() => encode(href, { border: 0 }), [href])
   const d = data.flatMap((row, y) => row.map((on, x) => (on ? `M${x} ${y}h1v1h-1z` : ''))).join('')
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} className="rc-qr" role="img" aria-label="まちの頁を開く QR コード" shapeRendering="crispEdges">
+    <svg viewBox={`0 0 ${size} ${size}`} className="rc-qr" role="img" aria-label="このレシートを開く QR コード" shapeRendering="crispEdges">
       <path d={d} fill="currentColor" />
     </svg>
   )
@@ -238,7 +238,9 @@ function useFollow(phase: Phase, printing: string | null, card: React.RefObject<
   const touched = React.useRef(false)
   const raf = React.useRef(0)
   React.useEffect(() => {
-    const mark = () => {
+    const mark = (e: Event) => {
+      // 頁の中のボタン・リンク・欄（年度の切り替えなど）を押したのは、自分で頁を送ったことにしない。スクロールバーのドラッグ（target は html）では止める
+      if (e.type === 'pointerdown' && e.target instanceof Element && e.target.closest('button, a, input, select, label')) return
       touched.current = true
       cancelAnimationFrame(raf.current)
     }
@@ -551,9 +553,9 @@ export function ReceiptMachine({ path, name, v, year, pop, base, detailHref, hea
         <span className="text-sm">1人あたりの合計</span>
         <Yen n={sum} className={cn(titleClass('h1'), 'text-primary')} />
       </p>
-      {/* 読み取るとまちの頁を開く QR と、このレシートをシェアするボタン（X とリンクのコピー。リンクはホーム） */}
+      {/* 読み取るとこのレシートの頁を開く QR と、シェアするボタン（X とリンクのコピー） */}
       <div className="mt-5 flex items-center justify-center gap-5">
-        <Qr url={`${FUDOKI_ORIGIN}${r.href}`} />
+        <Qr url={shareUrl(path, r.year)} />
         <Share url={shareUrl(path, r.year)} />
       </div>
       {/* 読み終えたところから、そのまま詳しい頁へ進めるように、紙の一番下に「<まち>の詳細」を置く（2026-11-18 yuito） */}

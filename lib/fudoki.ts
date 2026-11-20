@@ -17,8 +17,8 @@ export type Snapshot = {
 }
 
 /** 目（分野つき）。款・項の木の末端 */
-type Moku = { id: string; name: string; yen: number; field: string }
-type Kan = { name: string; yen: number; kou: { name: string; yen: number; moku: Moku[] }[] }
+export type Moku = { id: string; name: string; yen: number; field: string }
+export type Kan = { name: string; yen: number; kou: { name: string; yen: number; moku: Moku[] }[] }
 
 /** 自治体の検索（/api/jurisdictions?name=）の1件 */
 export type TownEntry = { code: string; name: string; prefecture: string; kind: string; path: string }
@@ -103,6 +103,9 @@ export const withCheckDigit = (five: string) => {
   const r = [...five].reduce((s, d, i) => s + Number(d) * (6 - i), 0) % 11
   return `${five}${r === 0 ? 1 : (11 - r) % 10}`
 }
+
+/** まちのレシートの頁の題（head と、年度を替えたときの document.title） */
+export const pageTitle = (name: string, year: number) => `${name}の1人あたりのレシート（${reiwa(year)}）｜風土記`
 
 /** 風土記の本体。分野の行・「詳細」・紋章はそこへ繋ぐ */
 export const FUDOKI_ORIGIN = 'https://fudoki.dev'
