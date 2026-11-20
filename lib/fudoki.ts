@@ -1,0 +1,103 @@
+// 風土記（fudoki.dev）から読むデータの形と、レシートに使う見え方。
+// データは fudoki.dev の /api/jurisdictions/:code（自治体の頁と同じ1年度の款項目を分野ごとに足したもの）をそのまま使い、ここでは並べ替えと名前付けだけをする。
+// 分野の並び・名前・仕事の例は fudoki の apps/web/jurisdiction/domains.ts と packages/fiscal/cofog-master.ts が正本で、ここはその写し
+
+export type Kind = 'initial' | 'settlement'
+
+/** fudoki.dev の /api/jurisdictions/:code の応答のうち、レシートが使う部分 */
+export type Snapshot = {
+  code: string
+  name: string
+  /** 住民基本台帳人口。無い自治体は 0 */
+  pop: number
+  year: number
+  /** 頁で選べる年度ごとの資料の種類 */
+  kinds: Record<string, Kind>
+  years: Record<string, { kind: Kind; total: number; fields: Record<string, number> }>
+}
+
+/** 自治体の検索（/api/jurisdictions?name=）の1件 */
+export type TownEntry = { code: string; name: string; prefecture: string; kind: string; path: string }
+
+/** [分野の id, 名前, 仕事の例]。並びは市民の関心の高い順（fudoki の判断） */
+const FRAMES: [id: string, name: string, examples: string][] = [
+  ['bosai', '防災・安全', '消防・防犯・交通安全'],
+  ['fukushi', '福祉・子育て', '保育園・学童・介護・障害のある人の支援・生活保護'],
+  ['kyoiku', '教育', '小中学校・給食・幼稚園'],
+  ['iryo', '健康・医療', '健診・予防接種・保健所'],
+  ['kurashi', '住まい・まちづくり', '住まい・再開発・まちの整備'],
+  ['sangyo', '産業・交通', '商店街・中小企業・仕事さがし・道路・バス'],
+  ['kankyo', '環境', 'ごみ・リサイクル・省エネ'],
+  ['bunka', '文化・スポーツ', '図書館・体育館・公園'],
+  ['gyosei', '行政・議会', '窓口・税・議会・借金の返済'],
+  ['boei', '防衛', ''],
+  ['other', 'その他', '分野を一つに決められない支出'],
+]
+
+export type Field = { id: string; name: string; examples: string; yen: number }
+
+/** 1年度の見え方。分野は金額の多い順で、その他は常に最後 */
+export function yearView(d: Snapshot) {
+  const y = d.years[String(d.year)]!
+  const fields: Field[] = FRAMES.map(([id, name, examples]) => ({ id, name, examples, yen: y.fields[id] ?? 0 }))
+    .filter((f) => f.yen > 0)
+    .sort((a, b) => Number(a.id === 'other') - Number(b.id === 'other') || b.yen - a.yen)
+  return { year: d.year, total: y.total, fields, word: y.kind === 'settlement' ? ('決算' as const) : ('予算' as const) }
+}
+export type YearView = ReturnType<typeof yearView>
+
+/** 頁で選べる年度（古い順） */
+export const yearsOf = (d: Snapshot) => Object.keys(d.kinds).map(Number).sort((a, b) => a - b)
+
+/** 分野ごとの1人あたり（円）。和が合計（total を人口で割って丸めた額）に合うよう、大きい端数から1円ずつ足す */
+export function perHeadParts(fields: { yen: number }[], total: number, pop: number) {
+  const sum = Math.round(total / pop)
+  const raw = fields.map((f) => f.yen / pop)
+  const parts = raw.map(Math.floor)
+  const rest = sum - parts.reduce((a, b) => a + b, 0)
+  raw
+    .map((r, i) => [r - Math.floor(r), i] as const)
+    .sort((a, b) => b[0] - a[0])
+    .slice(0, Math.max(0, rest))
+    .forEach(([, i]) => parts[i]!++)
+  return { sum, parts }
+}
+
+/** 額を兆・億・万の単位で区切った文字（9,606億8,000万円 の「円」の前まで）。0 の区切りは出さない。端数は丸めない */
+export function withUnits(yen: number): string {
+  const units = ['', '万', '億', '兆']
+  let n = Math.max(0, Math.floor(yen))
+  const parts: string[] = []
+  for (let i = 0; n > 0 && i < units.length; i++) {
+    const g = i === units.length - 1 ? n : n % 10000
+    if (g) parts.unshift(`${g.toLocaleString('ja-JP')}${units[i]}`)
+    n = i === units.length - 1 ? 0 : Math.floor(n / 10000)
+  }
+  return parts.join('') || '0'
+}
+
+/** 今の会計年度（4月始まり、日本時間） */
+const currentFiscalYear = (now: Date) => {
+  const jst = new Date(now.getTime() + 9 * 3600_000)
+  return jst.getUTCMonth() < 3 ? jst.getUTCFullYear() - 1 : jst.getUTCFullYear()
+}
+
+/** 西暦の会計年度を令和の R 表記にする（2025 → R7年度）。2019年より前は西暦のまま */
+export const reiwa = (year: number) => (year >= 2019 ? `R${year - 2018}年度` : `${year}年度`)
+
+/** 今年度・昨年度・一昨年度・来年度。それより前は R 表記 */
+export function yearName(year: number, now = new Date()): string {
+  const diff = currentFiscalYear(now) - year
+  return diff === 0 ? '今年度' : diff === 1 ? '昨年度' : diff === 2 ? '一昨年度' : diff === -1 ? '来年度' : reiwa(year)
+}
+
+/** 5桁の市区町村コードに検査数字を足して6桁にする（全国地方公共団体コード） */
+export const withCheckDigit = (five: string) => {
+  const r = [...five].reduce((s, d, i) => s + Number(d) * (6 - i), 0) % 11
+  return `${five}${r === 0 ? 1 : (11 - r) % 10}`
+}
+
+/** 風土記の本体。分野の行・「詳細」・紋章はそこへ繋ぐ */
+export const FUDOKI_ORIGIN = 'https://fudoki.dev'
+/** このサイト。シェアのリンクと OG 画像の絶対 URL に使う */
+export const SITE_ORIGIN = 'https://spending.fudoki.dev'
