@@ -352,6 +352,52 @@ function perforated(texture: HTMLCanvasElement, height: number) {
   return c
 }
 
+/** 住民税のうち、そのまちに入る分の割合。標準税率で、区市町村民税 6%・道府県民税 4%（合わせて 10%）。指定都市（8%・2%）は今は収録していない */
+const taxShare = (kind: string) => (kind === '都道府県' ? 0.4 : 0.6)
+
+/** 住民税の年額を入れる欄。入れた額はこの画面の中だけで使い、保存も送信もしない（URL・シェア・QR にも載せない） */
+function TaxInput({ name, kind, tax, onTax }: { name: string; kind: string; tax: number | null; onTax: (yen: number | null) => void }) {
+  const [text, setText] = React.useState('')
+  const id = React.useId()
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const yen = Number(text.replace(/[^\d]/g, ''))
+    if (yen > 0 && yen < 100_000_000) onTax(yen)
+  }
+  return (
+    <form onSubmit={submit} className="rm-in rm-divider mt-4 pt-4 sm:mt-5 sm:pt-5" data-snap-skip>
+      <label htmlFor={id} className="block text-sm opacity-80">
+        住民税の年額を入れると、そのうち{name}に入る分（{kind === '都道府県' ? '10分の4' : '10分の6'}）で刷り直します
+      </label>
+      <div className="mt-2 flex items-center gap-2">
+        <span className="flex h-12 min-w-0 flex-1 items-center gap-1 rounded-full bg-brand-fill px-4 text-brand-fill-foreground">
+          <input
+            id={id}
+            inputMode="numeric"
+            autoComplete="off"
+            value={text}
+            placeholder="120,000"
+            onChange={(e) => setText(e.target.value)}
+            className="min-w-0 flex-1 bg-transparent text-base tabular-nums outline-none placeholder:text-brand-fill-muted"
+          />
+          <span className="text-sm">円</span>
+        </span>
+        <button type="submit" className="h-12 shrink-0 rounded-full bg-brand-foreground px-5 text-sm font-medium text-brand transition-opacity hover:opacity-90">
+          刷る
+        </button>
+      </div>
+      <p className="mt-2 text-xs opacity-80">
+        入れた額は保存も送信もしません。
+        {tax ? (
+          <button type="button" onClick={() => (setText(''), onTax(null))} className="ml-2 underline underline-offset-4">
+            1人あたりに戻す
+          </button>
+        ) : null}
+      </p>
+    </form>
+  )
+}
+
 /** 押し出された前の紙（新しい順）。今出ている紙の下端に続く1本の紙として、真下へ垂れて下で奥へ折り返し、レシートの裏を上へ戻る立体（ribbon3d.ts）に描く。
  * 立体を描くまで（読み込み・絵を写す間）は、いちばん新しい一枚を DOM のまま同じ場所に出しておく。WebGL が使えない・絵を写せないときは、前の紙を残さない（以後も残さない） */
 function Ribbon({ papers, waiting, onHeight, onFail, children }: { papers: Older[]; waiting: boolean; onHeight: (h: number) => void; onFail: () => void; children: React.ReactNode }) {
@@ -464,17 +510,24 @@ let printedId = 0
 
 /** 刷った一枚の紙（数え上げの key と、その年度のデータ） */
 /** href（QR の行き先）と pop（1人あたりで割る人口）は、その紙を刷ったときの年度のもの。年度を替えても前の紙は前の年度のまま */
-type Printed = { id: number; key: string; year: number; v: YearView; href: string; base: string; pop: number }
+/** mine は住民税のうちそのまちに入る分（円）。入れていなければ null で、1人あたりで刷る */
+type Printed = { id: number; key: string; year: number; v: YearView; href: string; base: string; pop: number; mine: number | null }
 
-export function ReceiptMachine({ path, name, v, year, pop, base, detailHref, head, onPrinted }: { onPrinted?: () => void; /** このサイトでのまちの path（シェアのリンク） */ path: string; name: string; v: YearView; year: number; pop: number | null; base: string; detailHref: string; head: React.ReactNode }) {
+export function ReceiptMachine({ path, name, kind, v, year, pop, base, detailHref, head, onPrinted }: { onPrinted?: () => void; /** このサイトでのまちの path（シェアのリンク） */ path: string; name: string; /** 自治体の種類（都道府県・区・市・町村）。住民税のうち入る分の割合を決める */ kind: string; v: YearView; year: number; pop: number | null; base: string; detailHref: string; head: React.ReactNode }) {
   const settled = v.word === '決算'
   const what = `${yearName(year)}の${settled ? '決算' : '予算'}`
-  const counted = `${year}:${v.total}`
+  /** 住民税の年額と、そのうちこのまちに入る分。入れると、その額を予算の割合で分野に割って刷り直す */
+  const [tax, setTax] = React.useState<number | null>(null)
+  const mine = tax ? Math.round(tax * taxShare(kind)) : null
+  const counted = `${year}:${v.total}:${mine ?? ''}`
   const feed = React.useRef<HTMLDivElement>(null)
   /** 刷った紙（いま出ている一枚）と、押し出された前の紙（新しい順。折り返して裏を戻る） */
   const [printed, setPrinted] = React.useState<Printed | null>(null)
   const [older, setOlder] = React.useState<Older[]>([])
   const [ribbonH, setRibbonH] = React.useState(0)
+  /** 住民税の欄は、最初の紙を刷ってから出す（数えている間は札の数字だけを見せる）。一度出したら刷り直す間も出したまま */
+  const [askTax, setAskTax] = React.useState(false)
+  if (printed && !askTax) setAskTax(true)
   const [seen, setSeen] = React.useState(counted)
   if (seen !== counted) {
     // 数え直す（年度や額が変わる）ときは、出ている紙を切らずに残し、数え終えてから続けて刷る。前の紙は新しい紙に押し出される。
@@ -487,12 +540,12 @@ export function ReceiptMachine({ path, name, v, year, pop, base, detailHref, hea
     setOlder(!keep ? [] : printed && height > 0 ? [{ r: printed, height }, ...older].slice(0, 3) : older)
     setPrinted(null)
   }
-  const perTo = pop ? Math.round(v.total / pop) : 0
+  const perTo = mine ?? (pop ? Math.round(v.total / pop) : 0)
   const receipt = pop ? perHeadParts(v.fields, v.total, pop) : null
   const card = React.useRef<HTMLElement>(null)
   const phase = usePhase(counted)
   React.useEffect(() => {
-    if (phase === 'print' && pop && printed?.key !== counted) setPrinted({ id: ++printedId, key: counted, year, v, href: detailHref, base, pop })
+    if (phase === 'print' && pop && printed?.key !== counted) setPrinted({ id: ++printedId, key: counted, year, v, href: detailHref, base, pop, mine })
   }, [phase, counted])
   /** いま刷っている紙の key（刷り終えるまで）。頁送りと紙の動きに使う */
   const printing = phase === 'print' && printed?.key === counted ? counted : null
@@ -545,12 +598,12 @@ export function ReceiptMachine({ path, name, v, year, pop, base, detailHref, hea
   }, [printing, phase, pop])
   /** 一枚の紙の中身 */
   const paper = (r: Printed) => {
-    const { parts, sum } = perHeadParts(r.v.fields, r.v.total, r.pop)
+    const { parts, sum } = r.mine ? { parts: apportion(r.v.fields.map((f) => f.yen), r.mine), sum: r.mine } : perHeadParts(r.v.fields, r.v.total, r.pop)
     return (
     <div className="rc-paper">
       <p className="text-center text-base font-semibold tracking-[0.3em]">{name}</p>
       <p className="mt-1 text-center text-sm text-muted-foreground">
-        {reiwa(r.year)} {r.v.word === '決算' ? '決算' : '当初予算'}・1人あたり
+        {reiwa(r.year)} {r.v.word === '決算' ? '決算' : '当初予算'}・{r.mine ? 'あなたの住民税の分' : '1人あたり'}
       </p>
       <ul className="rc-rule mt-4 pt-2">
         {r.v.fields.map((f, i) => (
@@ -558,7 +611,7 @@ export function ReceiptMachine({ path, name, v, year, pop, base, detailHref, hea
         ))}
       </ul>
       <p className="rc-rule mt-2 flex items-center justify-between pt-3">
-        <span className="text-sm">1人あたりの合計</span>
+        <span className="text-sm">{r.mine ? 'あなたの住民税の分の合計' : '1人あたりの合計'}</span>
         <Yen n={sum} className={cn(titleClass('h1'), 'text-primary')} />
       </p>
       {/* 読み取るとこのレシートの頁を開く QR と、シェアするボタン（X とリンクのコピー） */}
@@ -593,7 +646,7 @@ export function ReceiptMachine({ path, name, v, year, pop, base, detailHref, hea
           {pop ? (
             <div className="rm-in rm-divider pt-4 sm:pt-5" style={beat(BEAT.label2)}>
               {/* oxlint-disable-next-line design/text-size, design/space-step -- うちのまちの札は画面幅に合わせて見出しと金額を伸ばす見せ場なので、段の外を許す（見出しの大きさは 2026-11-17 yuito） */}
-              <dt className="text-[clamp(17px,4.6vw,22px)] opacity-80">1人あたりに直すと</dt>
+              <dt className="text-[clamp(17px,4.6vw,22px)] opacity-80">{mine ? `あなたの住民税のうち${name}の分` : '1人あたりに直すと'}</dt>
               {/* oxlint-disable-next-line design/text-size, design/space-step -- うちのまちの札は画面幅に合わせて見出しと金額を伸ばす見せ場なので、段の外を許す（見出しの大きさは 2026-11-17 yuito） */}
               <dd className="rm-in mt-2 text-[min(clamp(28px,8vw,60px),100cqi/var(--amount-em))] leading-none font-semibold" style={beat(BEAT.amount2)}>
                 <Odometer to={perTo} delay={BEAT.amount2} />
@@ -601,6 +654,7 @@ export function ReceiptMachine({ path, name, v, year, pop, base, detailHref, hea
             </div>
           ) : null}
         </dl>
+        {pop && askTax ? <TaxInput name={name} kind={kind} tax={tax} onTax={setTax} /> : null}
         {/* 札の下端の差し出し口。紙はここから出る */}
         {receipt ? <div className="rm-slot" aria-hidden="true" /> : null}
       </section>

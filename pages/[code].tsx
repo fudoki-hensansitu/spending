@@ -99,6 +99,7 @@ export default function TownPage({ d: first, town }: Props) {
           onPrinted={() => setPrinted(true)}
           path={`/${town.code}`}
           name={town.name}
+          kind={town.kind}
           v={v}
           year={d.year}
           pop={d.pop || null}
