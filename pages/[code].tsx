@@ -31,7 +31,10 @@ function useYear(first: Snapshot) {
     history.replaceState(history.state, '', url)
     document.title = pageTitle(x.name, x.year)
   }
+  // 最後に押した年度だけを出す。続けて押すと、先に押した年度の応答が後から届くことがある
+  const latest = React.useRef(0)
   const pick = (y: number) => {
+    const n = ++latest.current
     const have = byYear[y]
     if (have) return show(have)
     void fetch(`/api/jurisdictions/${first.code}?year=${y}`)
@@ -39,7 +42,7 @@ function useYear(first: Snapshot) {
       .then((x) => {
         if (!x || x.code !== first.code) return
         setByYear((m) => ({ ...m, [x.year]: x }))
-        show(x)
+        if (n === latest.current) show(x)
       })
       .catch(() => {})
   }
