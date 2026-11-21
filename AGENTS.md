@@ -11,13 +11,19 @@
 
 ```
 .
-├── pages/           # 頁（React、@void/react）。まちを選ぶ頁とレシートの頁
+├── pages/           # 頁（React、@void/react）。まちを選ぶ頁（/）とレシートの頁（/<自治体コード>?year=）
+├── receipt/         # 札とレシート（数え上げ・紙送り・押し出された紙の立体・シェア）。もとは fudoki の apps/web/home にあった（fudoki#1024 で外した）
+├── components/      # 見出し・まちの検索・紋章などの小さな部品
+├── lib/             # 本体から読むデータの形・分野の並び・1人あたりの割り方・年度の呼び方（本体の写し。正本は fudoki）
+├── server/          # 本体への中継（Service Binding。手元の vite dev は公開の fudoki.dev）
+├── middleware/      # /api/jurisdictions*・紋章・OG 画像を本体へ中継し、HTML に CSP を付ける
+├── styles/          # Tailwind と色・字の token（fudoki の DESIGN.md・tokens.css の写し）
 ├── docs/            # この repo の設計・判断（tracked）
-├── void.config.ts   # Worker 名（fudoki-spending）と、本体 Worker（fudoki）への Service Binding
+├── void.config.ts   # Worker 名（fudoki-spending）・spending.fudoki.dev・本体 Worker（fudoki）への Service Binding
 └── vite.config.ts
 ```
 
-データは本体の Worker から読む。この repo で予算を集計し直したり、どこかへ書き込んだりしない。足りないデータは本体の API に足してから読む。
+データは本体の Worker から読む。この repo で予算を集計し直したり、どこかへ書き込んだりしない。足りないデータは本体の API に足してから読む。本体の同じ path（`/api/jurisdictions*`・`/jurisdictions/<code>/emblem.svg`・`receipt.png`）をそのまま中継するので、本体がこれらの path や応答の形を変えるときはこの repo も直す。分野の名前・並び・token は本体の写しなので、本体で変えたら合わせる。
 
 ## セットアップ
 
@@ -28,7 +34,10 @@ mise install
 mise exec -- bun install
 mise exec -- bun run dev     # vite dev
 mise exec -- bun run check   # 型検査
+mise exec -- bun run deploy  # build して Worker（fudoki-spending）へ出す
 ```
+
+vite dev は Service Binding の先が手元に無いので、本体の公開の fudoki.dev に繋ぐ。
 
 依存は exact ピン留めにし、公開から7日未満の版は `bunfig.toml`（`minimumReleaseAge`）で解決から外す。セキュリティ修正は cooldown の例外として直ちに入れ、例外を解除できる日時を PR 本文に書く。
 

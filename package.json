@@ -6,10 +6,14 @@
     "dev": "vite",
     "build": "vite build",
     "prepare": "void prepare",
-    "check": "void prepare && tsc --noEmit"
+    "check": "void prepare && tsc --noEmit",
+    "test": "bun test",
+    "deploy": "vite build && cf deploy --prebuilt"
   },
   "dependencies": {
+    "@phosphor-icons/react": "2.1.10",
     "@void/react": "1.8.0",
+    "hono": "4.13.18",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "three": "0.187.0",
@@ -20,6 +24,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@types/three": "0.187.0",
+    "cf": "1.0.0-beta.31",
     "tailwindcss": "4.3.5",
     "typescript": "7.0.2",
     "vite": "8.3.8",
