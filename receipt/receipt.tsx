@@ -7,6 +7,7 @@ import { encode } from 'uqr'
 import { ArrowRightIcon, CaretDownIcon, CheckIcon, LinkIcon, XLogoIcon } from '@phosphor-icons/react'
 import { cn } from '../lib/cn'
 import { titleClass } from '../components/title'
+import { STANDARD, residentTax, type Household, type ResidentTax } from '../lib/tax'
 import { FUDOKI_ORIGIN, SITE_ORIGIN, apportion, perHeadParts, reiwa, withUnits, yearName, type Field, type YearView } from '../lib/fudoki'
 import { FieldIcon } from '../components/parts'
 import { BEAT, COUNT_MS, FOLLOW_MS, PRINT_MS, READ_MS, SCROLL_MS } from './motion'
@@ -352,22 +353,40 @@ function perforated(texture: HTMLCanvasElement, height: number) {
   return c
 }
 
-/** 住民税のうち、そのまちに入る分の割合。標準税率で、区市町村民税 6%・道府県民税 4%（合わせて 10%）。指定都市（8%・2%）は今は収録していない */
-const taxShare = (kind: string) => (kind === '都道府県' ? 0.4 : 0.6)
+/** 数字だけを取り出す（全角・カンマ・円を許す） */
+const digits = (text: string) => Number(text.normalize('NFKC').replace(/[^\d]/g, ''))
 
-/** 住民税の年額を入れる欄。入れた額はこの画面の中だけで使い、保存も送信もしない（URL・シェア・QR にも載せない） */
-function TaxInput({ name, kind, tax, onTax }: { name: string; kind: string; tax: number | null; onTax: (yen: number | null) => void }) {
+/** 小さな数の欄（家族の数・ボーナスの月数） */
+function Count({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
+  return (
+    <label className="flex items-center justify-between gap-3">
+      <span>{label}</span>
+      <input type="number" min={0} max={12} inputMode="numeric" value={value} onChange={(e) => onChange(Math.max(0, Math.min(12, digits(e.target.value))))} className="h-9 w-16 rounded-full bg-brand-fill px-3 text-center text-base text-brand-fill-foreground tabular-nums outline-none" />
+    </label>
+  )
+}
+
+/** 月給（額面）を入れる欄。住民税の通知額は覚えていないので、月給から見積もる（lib/tax.ts）。家族・年齢・ボーナスは標準を既定にし、変えたい人だけ開く。
+ * 入れた額はこの画面の中だけで使い、保存も送信もしない（URL・シェア・QR にも載せない） */
+function SalaryInput({ name, kind, on, onTax }: { name: string; kind: string; on: boolean; onTax: (tax: ResidentTax | null) => void }) {
   const [text, setText] = React.useState('')
+  const [h, setH] = React.useState<Household>(STANDARD)
+  const [none, setNone] = React.useState(false)
   const id = React.useId()
+  const set = (patch: Partial<Household>) => setH((x) => ({ ...x, ...patch }))
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
-    const yen = Number(text.replace(/[^\d]/g, ''))
-    if (yen > 0 && yen < 100_000_000) onTax(yen)
+    const monthly = digits(text)
+    if (!(monthly > 0 && monthly < 100_000_000)) return
+    const tax = residentTax(monthly, h)
+    const mine = kind === '都道府県' ? tax.pref : tax.city
+    setNone(mine === 0)
+    onTax(mine > 0 ? tax : null)
   }
   return (
     <form onSubmit={submit} className="rm-in rm-divider mt-4 pt-4 sm:mt-5 sm:pt-5" data-snap-skip>
       <label htmlFor={id} className="block text-sm opacity-80">
-        住民税の年額を入れると、そのうち{name}に入る分（{kind === '都道府県' ? '10分の4' : '10分の6'}）で刷り直します
+        月給（額面）を入れると、あなたが{name}に払う住民税の見積もりで刷り直します
       </label>
       <div className="mt-2 flex items-center gap-2">
         <span className="flex h-12 min-w-0 flex-1 items-center gap-1 rounded-full bg-brand-fill px-4 text-brand-fill-foreground">
@@ -376,7 +395,7 @@ function TaxInput({ name, kind, tax, onTax }: { name: string; kind: string; tax:
             inputMode="numeric"
             autoComplete="off"
             value={text}
-            placeholder="120,000"
+            placeholder="300,000"
             onChange={(e) => setText(e.target.value)}
             className="min-w-0 flex-1 bg-transparent text-base tabular-nums outline-none placeholder:text-brand-fill-muted"
           />
@@ -386,10 +405,27 @@ function TaxInput({ name, kind, tax, onTax }: { name: string; kind: string; tax:
           刷る
         </button>
       </div>
-      <p className="mt-2 text-xs opacity-80">
-        入れた額は保存も送信もしません。
-        {tax ? (
-          <button type="button" onClick={() => (setText(''), onTax(null))} className="ml-2 underline underline-offset-4">
+      <details className="mt-3 text-sm">
+        <summary className="cursor-pointer opacity-80">家族・年齢・ボーナスを変える</summary>
+        <div className="mt-3 grid gap-3">
+          <label className="flex items-center justify-between gap-3">
+            <span>配偶者を扶養している</span>
+            <input type="checkbox" checked={h.spouse} onChange={(e) => set({ spouse: e.target.checked })} className="size-5 accent-[var(--brand-fill)]" />
+          </label>
+          <Count label="扶養している家族（16歳以上）" value={h.dependents} onChange={(n) => set({ dependents: n })} />
+          <Count label="16歳未満の子" value={h.children} onChange={(n) => set({ children: n })} />
+          <label className="flex items-center justify-between gap-3">
+            <span>40歳以上</span>
+            <input type="checkbox" checked={h.over40} onChange={(e) => set({ over40: e.target.checked })} className="size-5 accent-[var(--brand-fill)]" />
+          </label>
+          <Count label="ボーナス（年に月給の何か月分）" value={h.bonusMonths} onChange={(n) => set({ bonusMonths: n })} />
+        </div>
+      </details>
+      <p className="mt-3 text-xs opacity-80">
+        {none ? 'この月給だと住民税はかかりません。' : null}
+        会社員の目安で見積もります。入れた額は保存も送信もしません。
+        {on ? (
+          <button type="button" onClick={() => (setText(''), setNone(false), onTax(null))} className="ml-2 underline underline-offset-4">
             1人あたりに戻す
           </button>
         ) : null}
@@ -510,15 +546,15 @@ let printedId = 0
 
 /** 刷った一枚の紙（数え上げの key と、その年度のデータ） */
 /** base（分野の事業へのリンク）と pop（1人あたりで割る人口）は、その紙を刷ったときのもの。刷り直しても前の紙は前のまま */
-/** mine は住民税のうちそのまちに入る分（円）。入れていなければ null で、1人あたりで刷る */
+/** mine は月給から見積もった住民税のうち、そのまちに払う分（円）。入れていなければ null で、1人あたりで刷る */
 type Printed = { id: number; key: string; year: number; v: YearView; base: string; pop: number; mine: number | null }
 
-export function ReceiptMachine({ path, name, kind, v, year, pop, base, head, onPrinted }: { onPrinted?: () => void; /** このサイトでのまちの path（シェアのリンク） */ path: string; name: string; /** 自治体の種類（都道府県・区・市・町村）。住民税のうち入る分の割合を決める */ kind: string; v: YearView; year: number; pop: number | null; base: string; head: React.ReactNode }) {
+export function ReceiptMachine({ path, name, kind, v, year, pop, base, head, onPrinted }: { onPrinted?: () => void; /** このサイトでのまちの path（シェアのリンク） */ path: string; name: string; /** 自治体の種類（都道府県・区・市・町村）。住民税のどの分（区市町村・都道府県）を出すかを決める */ kind: string; v: YearView; year: number; pop: number | null; base: string; head: React.ReactNode }) {
   const settled = v.word === '決算'
   const what = `${yearName(year)}の${settled ? '決算' : '予算'}`
-  /** 住民税の年額と、そのうちこのまちに入る分。入れると、その額を予算の割合で分野に割って刷り直す */
-  const [tax, setTax] = React.useState<number | null>(null)
-  const mine = tax ? Math.round(tax * taxShare(kind)) : null
+  /** 月給から見積もった住民税と、そのうちこのまちに払う分。入れると、その額を予算の割合で分野に割って刷り直す */
+  const [tax, setTax] = React.useState<ResidentTax | null>(null)
+  const mine = tax ? (kind === '都道府県' ? tax.pref : tax.city) : null
   const counted = `${year}:${v.total}:${mine ?? ''}`
   const feed = React.useRef<HTMLDivElement>(null)
   /** 刷った紙（いま出ている一枚）と、押し出された前の紙（新しい順。折り返して裏を戻る） */
@@ -649,7 +685,7 @@ export function ReceiptMachine({ path, name, kind, v, year, pop, base, head, onP
             </div>
           ) : null}
         </dl>
-        {pop && askTax ? <TaxInput name={name} kind={kind} tax={tax} onTax={setTax} /> : null}
+        {pop && askTax ? <SalaryInput name={name} kind={kind} on={!!tax} onTax={setTax} /> : null}
         {/* 札の下端の差し出し口。紙はここから出る */}
         {receipt ? <div className="rm-slot" aria-hidden="true" /> : null}
       </section>
